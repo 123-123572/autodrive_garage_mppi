@@ -1,7 +1,7 @@
 #include "mppi_controller/MPPIController.hpp"
 #include <cmath>
 
-#include <omp.h> // 顶部记得加入 OpenMP 头文件
+#include <omp.h>
 
 namespace autodrive_garage::mppi {
 

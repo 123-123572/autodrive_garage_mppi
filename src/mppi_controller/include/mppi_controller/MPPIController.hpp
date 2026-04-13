@@ -5,6 +5,7 @@
 #include <random>
 #include "mppi_controller/KinematicBicycleModel.hpp"
 
+
 namespace autodrive_garage::mppi {
 
 using kinematic_bicycle::KinematicBicycleModel;
