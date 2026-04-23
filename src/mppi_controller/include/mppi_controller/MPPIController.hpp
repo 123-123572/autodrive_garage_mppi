@@ -4,6 +4,7 @@
 #include <memory>
 #include <random>
 #include "mppi_controller/KinematicBicycleModel.hpp"
+#include "mppi_controller/mppi_cuda_core.hpp"
 
 
 namespace autodrive_garage::mppi {
@@ -22,9 +23,9 @@ public:
         double dt = 0.1;              // 离散时间间隔
         double lambda = 1.0;          // 温度参数
         
-        // 噪声标准差 (Sigma)
+        
         double std_dev_accel = 1.0; 
-        double std_dev_steer = 0.2;
+        double std_dev_steer = 0.2;   // 噪声标准差 (Sigma)
     };
 
     [[nodiscard]] static ptr create(const Config& config, KinematicBicycleModel::ptr model);
@@ -44,18 +45,10 @@ private:
 
     
     Eigen::MatrixXd control_sequence_;       // [2 x horizon]，保存上一帧的控制序列 u
-    Eigen::MatrixXd noise_accel_;            // [num_samples x horizon]，加速度噪声矩阵
-    Eigen::MatrixXd noise_steer_;            // [num_samples x horizon]，转向噪声矩阵
     Eigen::VectorXd trajectory_costs_;       // [num_samples]，存储每条轨迹的代价 S_k
 
-    // 随机数生成器
-    std::mt19937 rng_;
-    std::normal_distribution<double> dist_accel_;
-    std::normal_distribution<double> dist_steer_;
 
-    // 内部私有方法
-    void GenerateNoise();
-    double ComputeTrajectoryCost(const StateVec& final_state, const Eigen::MatrixXd& reference_trajectory, int t);
+    cuda::CudaMPPIEngine::ptr cuda_engine_;  // CUDA 引擎指针
 };
 
 } // namespace autodrive_garage::mppi
