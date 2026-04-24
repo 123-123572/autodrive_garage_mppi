@@ -4,3 +4,7 @@ log/
 compile_commands.json
 .vscode/
 *.csv
+build/
+install/
+log/
+.cache/

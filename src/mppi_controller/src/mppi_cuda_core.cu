@@ -34,7 +34,8 @@ __constant__ DeviceConfig d_config;
  //cuRAND 随机数状态初始化 Kernel
 __global__ void InitCurandKernel(curandState* state, unsigned long seed, int num_samples) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < num_samples) {
+    if (idx < num_samples) {;
+        
         curand_init(seed, idx, 0, &state[idx]);
     }
 }
