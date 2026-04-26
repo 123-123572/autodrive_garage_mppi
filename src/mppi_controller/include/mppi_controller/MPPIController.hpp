@@ -49,6 +49,12 @@ private:
 
 
     cuda::CudaMPPIEngine::ptr cuda_engine_;  // CUDA 引擎指针
+
+    std::vector<float> h_ref_traj_;
+    std::vector<float> h_base_ctrl_;
+    std::vector<float> h_costs_;
+    std::vector<float> h_noise_a_;
+    std::vector<float> h_noise_s_;
 };
 
 } // namespace autodrive_garage::mppi

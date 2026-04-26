@@ -4,6 +4,7 @@
 
 #include <cuda_runtime.h>
 #include <curand_kernel.h>
+#include <nvtx3/nvToolsExt.h>
 
 
 #include "mppi_controller/mppi_cuda_core.hpp"

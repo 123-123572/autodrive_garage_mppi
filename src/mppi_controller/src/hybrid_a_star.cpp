@@ -1,10 +1,39 @@
 #include "mppi_controller/hybrid_a_star.hpp"
 #include <iostream>
 #include <algorithm>
+#include <unordered_map>
 
 namespace autodrive_garage::planning {
 
-HybridAStar::HybridAStar(const HybridAStarConfig& config) : config_(config) {}
+HybridAStar::HybridAStar(const HybridAStarConfig& config) : config_(config) {
+    // 1. 预计算圆的半径 R
+    config_.circle_radius = std::hypot(config_.vehicle_length / (2.0 * config_.num_circles), 
+                                       config_.vehicle_width / 2.0);
+
+    // 2. 预计算 N 个圆心在车辆局部坐标系下（后轴为原点）的 X 轴偏移量
+    config_.circle_offsets.resize(config_.num_circles);
+    
+    // 车辆最尾部的局部坐标
+    double rear_edge_x = - (config_.vehicle_length / 2.0) + config_.rear_axle_to_center; 
+    double circle_diameter = config_.vehicle_length / config_.num_circles;
+
+    for (int i = 0; i < config_.num_circles; ++i) {
+        // 每个圆覆盖一段长度，圆心在这段长度的中间
+        config_.circle_offsets[i] = rear_edge_x + (i + 0.5) * circle_diameter;
+    }
+    
+    std::cout << "碰撞检测 " << config_.num_circles 
+              << "圆模型, 半径 R=" << config_.circle_radius << "m" << std::endl;
+}
+
+// 接收来自 ROS 节点的 Costmap 数据并存入配置中
+void HybridAStar::UpdateMap(const std::vector<uint8_t>& costmap, int width, int height, double origin_x, double origin_y) {
+    config_.costmap = costmap;
+    config_.map_width = width;
+    config_.map_height = height;
+    config_.origin_x = origin_x; // 记录真实原点
+    config_.origin_y = origin_y; // 记录真实原点
+}
 
 HybridAStar::ptr HybridAStar::create(const HybridAStarConfig& config) {
     return std::make_unique<HybridAStar>(config);
@@ -53,9 +82,9 @@ bool HybridAStar::Plan(double start_x, double start_y, double start_theta,
         auto current = open_set.top();
         open_set.pop();
 
-        // 到达目标点判断 (容差可以自行配置)
+        // 到达目标点判断 
         if (std::hypot(current->x - goal_x, current->y - goal_y) < config_.xy_resolution) {
-            std::cout << "🚀 Hybrid A* 找到终点！迭代次数: " << iter_count << std::endl;
+            std::cout << "Hybrid A* 找到终点！迭代次数: " << iter_count << std::endl;
             
             // 回溯路径
             auto ptr = current;
@@ -90,7 +119,7 @@ bool HybridAStar::Plan(double start_x, double start_y, double start_theta,
         }
     }
 
-    std::cerr << "❌ Hybrid A* 搜索失败或达到最大迭代次数。" << std::endl;
+    std::cerr << "Hybrid A* 搜索失败或达到最大迭代次数。" << std::endl;
     return false;
 }
 
@@ -109,9 +138,7 @@ std::vector<HybridAStarNode::ptr> HybridAStar::ExpandNode(const HybridAStarNode:
 
             auto next = std::make_shared<HybridAStarNode>();
             
-            // ----------------------------------------------------
             // 物理引擎：离散化的运动学推演 (Bicycle Model)
-            // ----------------------------------------------------
             double travel_dist = dir * config_.step_size;
             
             next->x = current->x + travel_dist * std::cos(current->theta);
@@ -130,11 +157,12 @@ std::vector<HybridAStarNode::ptr> HybridAStar::ExpandNode(const HybridAStarNode:
             next->grid_y = ComputeGridIndex(next->y, config_.xy_resolution);
             next->grid_theta = ComputeGridIndex(next->theta, config_.theta_resolution);
 
-            // ----------------------------------------------------
             // 代价结算 (G Cost)
-            // ----------------------------------------------------
+            //
             double step_penalty = (dir > 0) ? config_.forward_penalty : config_.backward_penalty;
+            //稳态转向代价
             double steer_cost = std::abs(steer) * config_.steer_penalty;
+            //动态平顺性代价
             double steer_change_cost = std::abs(steer - current->steer) * config_.steer_change_penalty;
             // 换挡惩罚 (前进切倒车，或倒车切前进)
             double gear_switch_cost = (current->is_forward != (dir > 0)) ? 2.0 : 0.0; 
@@ -153,17 +181,49 @@ std::vector<HybridAStarNode::ptr> HybridAStar::ExpandNode(const HybridAStarNode:
 }
 
 bool HybridAStar::IsCollisionFree(double x, double y, double theta) const {
-    // TODO: 接入实际的栅格地图 / Costmap 2D
-    // 1. 根据 x, y 查网格
-    // 2. 根据 theta 和车辆长宽，使用包围盒计算或者多圆盘 (Circle approximation) 进行碰撞检测
+    // 如果没有地图数据，直接返回 true（或者抛出警告）
+    if (config_.costmap.empty() || config_.map_width == 0) {
+        return true; 
+    }
+
+    // 提取三角函数
+    const double cos_theta = std::cos(theta);
+    const double sin_theta = std::sin(theta);
+
+    // 遍历预计算好的 N 个圆
+    for (int i = 0; i < config_.num_circles; ++i) {
+        
+        // 1. 计算圆心的全局坐标 (通过旋转平移)
+        double cx = x + config_.circle_offsets[i] * cos_theta;
+        double cy = y + config_.circle_offsets[i] * sin_theta;
+
+        // 2. 转换到 Costmap 栅格坐标
+        int grid_x = ComputeGridIndex(cx - config_.origin_x, config_.xy_resolution);
+        int grid_y = ComputeGridIndex(cy - config_.origin_y, config_.xy_resolution);
+
+        // 3. 地图边界硬核保护
+        if (grid_x < 0 || grid_x >= config_.map_width || 
+            grid_y < 0 || grid_y >= config_.map_height) {
+            return false; // 开出地图边界，判定为碰撞！
+        }
+
+        // 4. O(1) 极速查表 
+        // 外部喂进来的 costmap 必须已经是根据 circle_radius 膨胀过的！
+        int index = grid_y * config_.map_width + grid_x;
+        
+        if (config_.costmap[index] >= config_.lethal_cost) {
+            return false; // 圆心踩到雷区，直接驳回该轨迹节点！
+        }
+    }
+
+    // 4 个圆都没事，一路绿灯
     return true; 
 }
 
 double HybridAStar::CalculateHeuristic(const HybridAStarNode::ptr& node, 
                                        double goal_x, double goal_y, double goal_theta) const {
-    // TODO: 完整的 Hybrid A* 需要取两者的最大值 (max(H_holonomic, H_non_holonomic))
-    // 1. Non-holonomic (无障碍物)：Reed-Shepp 曲线长度
-    // 2. Holonomic (有障碍物)：2D A* 在网格地图上算出的到终点距离
+
+    (void)goal_theta;
     
     // 目前降级为简单的欧拉直线距离作为骨架打底
     return std::hypot(node->x - goal_x, node->y - goal_y);

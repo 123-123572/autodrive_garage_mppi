@@ -25,11 +25,27 @@ struct HybridAStarConfig {
     double backward_penalty = 1.5;    // 倒车代价惩罚（通常倒车更难）
     double steer_penalty = 0.5;       // 转向惩罚
     double steer_change_penalty = 1.0;// 转向改变惩罚（防止方向盘乱打）
+
+    //多圆盘碰撞检测预计算参数
+    int num_circles = 4;
+    double vehicle_length = 4.8;
+    double vehicle_width = 1.8;
+    double rear_axle_to_center = 1.0; // 后轴中心到车辆几何中心的距离
+
+    double circle_radius;                  // 预计算的圆半径 R
+    std::vector<double> circle_offsets;    // 预计算的 N 个圆心相对后轴的 X 偏移量
+
+    int map_width = 0;
+    int map_height = 0;
+    double origin_x = 0.0; // [新增] 地图原点X
+    double origin_y = 0.0; // [新增] 地图原点Y
+    std::vector<uint8_t> costmap; // 成本地图数据 (0-255)，需要外部设置
+    uint8_t lethal_cost = 253;    // 致命障碍物阈值
 };
 
-// ==========================================
+
 // 2. 连续-离散混合节点
-// ==========================================
+
 struct HybridAStarNode {
     using ptr = std::shared_ptr<HybridAStarNode>;
 
@@ -58,18 +74,18 @@ struct HybridAStarNode {
     [[nodiscard]] double f_cost() const { return g_cost + h_cost; }
 };
 
-// ==========================================
+
 // 3. 仿函数：用于优先队列的排序 (小顶堆)
-// ==========================================
+
 struct NodeComparator {
     bool operator()(const HybridAStarNode::ptr& lhs, const HybridAStarNode::ptr& rhs) const {
         return lhs->f_cost() > rhs->f_cost(); 
     }
 };
 
-// ==========================================
+
 // 4. 仿函数：用于 3D Grid 的哈希计算 (Closed Set)
-// ==========================================
+
 struct GridIndexHash {
     size_t operator()(const std::string& key) const {
         return std::hash<std::string>()(key);
@@ -91,6 +107,9 @@ public:
     HybridAStar& operator=(const HybridAStar&) = delete;
 
     [[nodiscard]] static ptr create(const HybridAStarConfig& config);
+    // 更新全局代价地图
+    
+    void UpdateMap(const std::vector<uint8_t>& costmap, int width, int height, double origin_x, double origin_y);
 
     // 主干规划接口
     bool Plan(double start_x, double start_y, double start_theta,

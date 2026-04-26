@@ -23,12 +23,12 @@ private:
     int num_samples_;
     int horizon_;
 
-    void* d_curand_states_; // 显存指针 (随机数生成器状态)
-    float* d_costs_;        // 显存指针 (轨迹代价)
-    float* d_ref_traj_;     // 显存指针 (参考路径)
-    float* d_base_ctrl_;    // 显存指针 (基准控制序列)
-    float* d_noise_a_;      // 显存指针 (加速度噪声)
-    float* d_noise_s_;      // 显存指针 (转向噪声)
+    void* d_curand_states_ = nullptr; // 显存指针 (随机数生成器状态)
+    float* d_costs_ = nullptr;        // 显存指针 (轨迹代价)
+    float* d_ref_traj_ = nullptr;     // 显存指针 (参考路径)
+    float* d_base_ctrl_ = nullptr;    // 显存指针 (基准控制序列)
+    float* d_noise_a_ = nullptr;      // 显存指针 (加速度噪声)
+    float* d_noise_s_ = nullptr;      // 显存指针 (转向噪声)
 };
 
 } // namespace autodrive_garage::cuda
