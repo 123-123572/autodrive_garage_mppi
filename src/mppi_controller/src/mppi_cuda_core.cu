@@ -20,7 +20,7 @@ struct DeviceConfig {
     int horizon = 50;
     float ref_v = 5.0f; 
 
-    // === 新增：代价函数权重 ===
+    //代价函数权重
     float w_x = 10.0f;       // 横向跟踪
     float w_y = 10.0f;       // 纵向跟踪
     float w_yaw = 5.0f;      // 航向角误差
@@ -42,14 +42,14 @@ __global__ void InitCurandKernel(curandState* state, unsigned long seed, int num
 }
 
 //MPPI核心推演 Kernel 
-// 替换原有的 MPPIRolloutKernel
+
 __global__ void MPPIRolloutKernel(
     curandState* curand_states,
    float* d_costs,             
     const float* d_ref_traj,    
-    const float* d_base_ctrl,   // [新增] 输入：上一帧的基准控制序列
-    float* d_out_noise_a,       // [新增] 输出：GPU生成的加速度噪声
-    float* d_out_noise_s,       // [新增] 输出：GPU生成的转向噪声
+    const float* d_base_ctrl,   // 输入：上一帧的基准控制序列
+    float* d_out_noise_a,       // 输出：GPU生成的加速度噪声
+    float* d_out_noise_s,       // 输出：GPU生成的转向噪声
     float cur_x, float cur_y, float cur_yaw, float cur_v,
     float std_dev_accel, float std_dev_steer,
     int num_samples)
@@ -83,8 +83,7 @@ __global__ void MPPIRolloutKernel(
 
     // 3. 开始前向推演
     for (int t = 0; t < d_config.horizon; ++t) {
-        // 生成控制指令 (目前是纯噪声，后续可加上 base_control)
-        // [修改核心逻辑]：生成纯噪声，并保存到显存以便传回 CPU
+
         float n_a = curand_normal(&local_state) * std_dev_accel;
         float n_s = curand_normal(&local_state) * std_dev_steer;
         

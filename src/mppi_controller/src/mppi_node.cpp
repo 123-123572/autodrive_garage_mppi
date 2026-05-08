@@ -17,7 +17,7 @@ MPPIControlNode::MPPIControlNode() : Node("mppi_control_node") {
     auto model = kinematic_bicycle::KinematicBicycleModel::create(model_cfg);
     
     mppi::MPPIController::Config mppi_cfg;
-    mppi_cfg.num_samples = 20000; 
+    mppi_cfg.num_samples = 10000; 
     mppi_cfg.horizon = horizon_;
     mppi_cfg.lambda = 1.0; 
     mppi_cfg.dt = dt_; 
@@ -49,6 +49,7 @@ void MPPIControlNode::PathCallback(const nav_msgs::msg::Path::SharedPtr msg) {
         auto node = std::make_shared<planning::HybridAStarNode>();
         node->x = pose.pose.position.x;
         node->y = pose.pose.position.y;
+        node->theta = tf2::getYaw(pose.pose.orientation);
         global_path_nodes_.push_back(node);
     }
     RCLCPP_INFO(this->get_logger(), "📥 收到新全局路径，节点数: %zu", global_path_nodes_.size());
@@ -109,55 +110,28 @@ void MPPIControlNode::TimerCallback() {
         nvtxRangePop();
 
     auto start = std::chrono::high_resolution_clock::now();
-    
-    nvtxRangePushA("MPPI_Compute");
-    mppi::ControlVec optimal_u = mppi_->ComputeControl(current_state, ref_traj);
-    nvtxRangePop();
-
-    if (ref_traj.cols() == 0) {
-            return; // 提取失败，车辆保持当前指令或停车
-        }
         
-        // 如果提取到的参考轨迹不够 MPPI 的 horizon 长度，用最后一个点补齐
-        if (ref_traj.cols() < horizon_) {
-            Eigen::MatrixXd padded_traj(2, horizon_);
-            int actual_len = ref_traj.cols();
-            
-            // 拷贝已有的点
-            padded_traj.leftCols(actual_len) = ref_traj;
-            
-            // 剩余的步数全部原地驻留（目标点悬停）
-            for (int t = actual_len; t < horizon_; ++t) {
-                padded_traj.col(t) = ref_traj.col(actual_len - 1);
-            }
-            ref_traj = padded_traj;    
+        nvtxRangePushA("MPPI_Compute");
+        // 这一步是呼叫 GPU 计算！
+        mppi::ControlVec optimal_u = mppi_->ComputeControl(current_state, ref_traj); 
+        nvtxRangePop();
 
-    auto end = std::chrono::high_resolution_clock::now();
-    
-    geometry_msgs::msg::Twist cmd_msg;
-    double target_v = current_state(kinematic_bicycle::V) + optimal_u(kinematic_bicycle::ACCEL) * dt_;
-    target_v = std::max(0.0, std::min(target_v, 15.0)); 
-    cmd_msg.linear.x = target_v;
-
-    if (target_v > 0.1) {
+        auto end = std::chrono::high_resolution_clock::now();
+        
+        geometry_msgs::msg::Twist cmd_msg;
+        double target_v = current_state(kinematic_bicycle::V) + optimal_u(kinematic_bicycle::ACCEL) * dt_;
+        cmd_msg.linear.x = target_v;
         cmd_msg.angular.z = (target_v / wheelbase_) * std::tan(optimal_u(kinematic_bicycle::STEER));
-    } else {
-        cmd_msg.angular.z = 0.0;
-    }
+        cmd_pub_->publish(cmd_msg);
 
-    cmd_pub_->publish(cmd_msg);
-
-    nvtxRangePop(); 
-
-    static double total_ms = 0.0;
-    static int count = 0;
-    total_ms += std::chrono::duration<double, std::milli>(end - start).count();
-    if (++count % 50 == 0) { 
-        RCLCPP_INFO(this->get_logger(), "⚡ GPU 核心推演耗时: %.3f ms | 当前车速: %.2f m/s", total_ms / 50.0, target_v);
-        total_ms = 0.0; count = 0;
+        static double total_ms = 0.0;
+        static int count = 0;
+        total_ms += std::chrono::duration<double, std::milli>(end - start).count();
+        if (++count % 50 == 0) { // 改成 50（1秒打印一次），原来是100
+            RCLCPP_INFO(this->get_logger(), "📊 MPPI 平均耗时 (含 GPU): %.3f ms | 车速: %.2f m/s", total_ms / 50.0, target_v);
+            total_ms = 0.0; count = 0;
+        }
     }
-    }
-}
 
 } // namespace autodrive_garage
 

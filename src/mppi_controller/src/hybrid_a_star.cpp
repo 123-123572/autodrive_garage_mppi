@@ -1,4 +1,5 @@
 #include "mppi_controller/hybrid_a_star.hpp"
+#include "dubins.h"
 #include <iostream>
 #include <algorithm>
 #include <unordered_map>
@@ -126,7 +127,7 @@ bool HybridAStar::Plan(double start_x, double start_y, double start_theta,
 std::vector<HybridAStarNode::ptr> HybridAStar::ExpandNode(const HybridAStarNode::ptr& current) {
     std::vector<HybridAStarNode::ptr> expanded_nodes;
     
-    // 转向角等分采样 (例如: -0.6, 0.0, 0.6)
+    // 转向角等分采样 
     double steer_step_val = (2.0 * config_.max_steer) / (config_.steer_step - 1);
 
     // 两个方向：1 代表前进，-1 代表倒车
@@ -220,13 +221,42 @@ bool HybridAStar::IsCollisionFree(double x, double y, double theta) const {
     return true; 
 }
 
-double HybridAStar::CalculateHeuristic(const HybridAStarNode::ptr& node, 
-                                       double goal_x, double goal_y, double goal_theta) const {
 
-    (void)goal_theta;
-    
-    // 目前降级为简单的欧拉直线距离作为骨架打底
-    return std::hypot(node->x - goal_x, node->y - goal_y);
+double HybridAStar::CalculateHeuristic(const HybridAStarNode::ptr& node, 
+                                       double goal_x, double goal_y, double goal_theta) const 
+{
+    // 1. 当前点
+    double x0 = node->x;
+    double y0 = node->y;
+    double th0 = node->theta;
+
+    // 2. 目标点
+    double x1 = goal_x;
+    double y1 = goal_y;
+    double th1 = goal_theta;
+
+    // 4. 创建 Dubins 路径
+DubinsPath path;
+
+// 起点 q0 = [x, y, theta]
+double q0[3] = {x0, y0, th0};
+
+// 终点 q1 = [x, y, theta]
+double q1[3] = {x1, y1, th1};
+
+// 最小转弯半径
+double rho = config_.min_turning_radius;
+
+// 调用
+int ret = dubins_shortest_path(&path, q0, q1, rho);
+
+if (ret != 0) {
+    // 失败退化为欧几里得
+    return std::hypot(x1 - x0, y1 - y0);
+}
+
+// Dubins 路径长度
+return dubins_path_length(&path);
 }
 
 } // namespace autodrive_garage::planning

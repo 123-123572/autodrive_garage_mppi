@@ -19,6 +19,7 @@ struct HybridAStarConfig {
     double wheelbase = 2.8;           // 轴距 (m)
     double max_steer = 0.6;           // 最大前轮转角 (rad)
     int steer_step = 3;               // 采样几个转向角（比如3代表：左、直、右）
+    double min_turning_radius = 5.0; // 默认最小转弯半径，可根据 wheelbase/max_steer 计算
     
     // 代价权重
     double forward_penalty = 1.0;     // 前进代价惩罚
@@ -37,8 +38,8 @@ struct HybridAStarConfig {
 
     int map_width = 0;
     int map_height = 0;
-    double origin_x = 0.0; // [新增] 地图原点X
-    double origin_y = 0.0; // [新增] 地图原点Y
+    double origin_x = 0.0; //  地图原点X
+    double origin_y = 0.0; //  地图原点Y
     std::vector<uint8_t> costmap; // 成本地图数据 (0-255)，需要外部设置
     uint8_t lethal_cost = 253;    // 致命障碍物阈值
 };
@@ -92,9 +93,9 @@ struct GridIndexHash {
     }
 };
 
-// ==========================================
+
 // 5. 核心规划器类
-// ==========================================
+
 class HybridAStar {
 public:
     using ptr = std::unique_ptr<HybridAStar>;
@@ -133,7 +134,7 @@ private:
     // 碰撞检测 (桩函数，需接入 Costmap)
     [[nodiscard]] bool IsCollisionFree(double x, double y, double theta) const;
 
-    // 启发式函数计算 (无障碍 Reed-Shepp 距离 + 2D A* 距离)
+    // 启发式函数计算 
     [[nodiscard]] double CalculateHeuristic(const HybridAStarNode::ptr& node, 
                                             double goal_x, double goal_y, double goal_theta) const;
 };

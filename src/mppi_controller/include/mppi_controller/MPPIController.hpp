@@ -18,7 +18,7 @@ public:
     using ptr = std::unique_ptr<MPPIController>;
 
     struct Config {
-        int num_samples = 1000;       // K: 采样轨迹数量
+        int num_samples = 10000;       // K: 采样轨迹数量
         int horizon = 50;             // T: 预测时域步数
         double dt = 0.1;              // 离散时间间隔
         double lambda = 1.0;          // 温度参数
